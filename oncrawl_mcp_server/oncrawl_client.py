@@ -80,6 +80,22 @@ class OnCrawlClient:
                 f"limit must be <= {self.SEARCH_MAX_LIMIT} per API request"
             )
         return limit
+
+    def _next_paginated_batch_limit(
+        self,
+        batch_size: int,
+        collected: int,
+        max_results: Optional[int]
+    ) -> Optional[int]:
+        """Compute the next request limit, respecting max_results."""
+        if max_results is not None and collected >= max_results:
+            return None
+        if max_results is None:
+            return batch_size
+        remaining = max_results - collected
+        if remaining <= 0:
+            return None
+        return min(batch_size, remaining)
     
     # === Search Queries ===
     
@@ -162,16 +178,21 @@ class OnCrawlClient:
         Returns:
             dict with 'links' array and 'meta' with total_hits
         """
+        batch_size = min(batch_size, self.SEARCH_MAX_LIMIT)
         all_links = []
         offset = 0
         total_hits = None
 
         while True:
+            fetch_limit = self._next_paginated_batch_limit(batch_size, len(all_links), max_results)
+            if fetch_limit is None:
+                break
+
             result = self.search_links(
                 crawl_id=crawl_id,
                 fields=fields,
                 oql=oql,
-                limit=min(batch_size, 1000),
+                limit=fetch_limit,
                 offset=offset
             )
 
@@ -181,14 +202,13 @@ class OnCrawlClient:
 
             all_links.extend(batch_links)
 
-            # Check if we're done
-            if len(batch_links) < batch_size:
-                break
-            if max_results and len(all_links) >= max_results:
+            if max_results is not None and len(all_links) >= max_results:
                 all_links = all_links[:max_results]
                 break
+            if len(batch_links) < fetch_limit:
+                break
 
-            offset += batch_size
+            offset += len(batch_links)
 
         return {
             "links": all_links,
@@ -227,12 +247,16 @@ class OnCrawlClient:
         total_hits = None
 
         while True:
+            fetch_limit = self._next_paginated_batch_limit(batch_size, len(all_pages), max_results)
+            if fetch_limit is None:
+                break
+
             result = self.search_pages(
                 crawl_id=crawl_id,
                 fields=fields,
                 oql=oql,
                 sort=sort,
-                limit=batch_size,
+                limit=fetch_limit,
                 offset=offset
             )
 
@@ -242,14 +266,13 @@ class OnCrawlClient:
 
             all_pages.extend(batch_pages)
 
-            # Check if we're done
-            if len(batch_pages) < batch_size:
-                break
-            if max_results and len(all_pages) >= max_results:
+            if max_results is not None and len(all_pages) >= max_results:
                 all_pages = all_pages[:max_results]
                 break
+            if len(batch_pages) < fetch_limit:
+                break
 
-            offset += batch_size
+            offset += len(batch_pages)
 
         return {
             "urls": all_pages,
@@ -598,13 +621,17 @@ class OnCrawlClient:
         total_hits = None
 
         while True:
+            fetch_limit = self._next_paginated_batch_limit(batch_size, len(all_pages), max_results)
+            if fetch_limit is None:
+                break
+
             result = self.search_log_pages(
                 project_id=project_id,
                 granularity=granularity,
                 fields=fields,
                 oql=oql,
                 sort=sort,
-                limit=batch_size,
+                limit=fetch_limit,
                 offset=offset
             )
 
@@ -614,13 +641,13 @@ class OnCrawlClient:
 
             all_pages.extend(batch_pages)
 
-            if len(batch_pages) < batch_size:
-                break
-            if max_results and len(all_pages) >= max_results:
+            if max_results is not None and len(all_pages) >= max_results:
                 all_pages = all_pages[:max_results]
                 break
+            if len(batch_pages) < fetch_limit:
+                break
 
-            offset += batch_size
+            offset += len(batch_pages)
 
         return {
             "urls": all_pages,

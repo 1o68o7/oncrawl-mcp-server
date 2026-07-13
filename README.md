@@ -431,6 +431,9 @@ pip install -e .
 
 ## Version History
 
+### 0.5.3
+- Fix max_results not respected on search_all_pages/links/log_pages between pagination batches
+
 ### 0.5.2
 - Fix 9 broken composite tools (count, site_health, top_issues, find_url, inspect_url, compare_crawls, search_all_*)
 - Parse aggregation rows/cols format (page_count) instead of legacy buckets
