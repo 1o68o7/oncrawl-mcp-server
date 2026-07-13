@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 
 class OnCrawlClient:
     BASE_URL = "https://app.oncrawl.com/api/v2/"
+    SEARCH_MAX_LIMIT = 1000
     LOG_SEARCH_MAX_LIMIT = 1000
     
     def __init__(self, api_token: Optional[str] = None):
@@ -72,6 +73,13 @@ class OnCrawlClient:
         data_type: pages, links, clusters, structured_data
         """
         return self._get(f"data/crawl/{crawl_id}/{data_type}/fields")
+
+    def _clamp_search_limit(self, limit: int) -> int:
+        if limit > self.SEARCH_MAX_LIMIT:
+            raise ValueError(
+                f"limit must be <= {self.SEARCH_MAX_LIMIT} per API request"
+            )
+        return limit
     
     # === Search Queries ===
     
@@ -86,7 +94,7 @@ class OnCrawlClient:
     ) -> dict:
         """
         Search pages with OQL filtering.
-        Max 10k results via pagination - use export for larger sets.
+        Max 1000 results per request - use export or search_all_pages for larger sets.
         
         Example OQL:
         {
@@ -96,6 +104,7 @@ class OnCrawlClient:
             ]
         }
         """
+        limit = self._clamp_search_limit(limit)
         payload = {
             "fields": fields,
             "limit": limit,
@@ -120,6 +129,7 @@ class OnCrawlClient:
         Search internal links.
         Useful for finding link graph anomalies.
         """
+        limit = self._clamp_search_limit(limit)
         payload = {
             "fields": fields,
             "limit": limit,
@@ -165,7 +175,7 @@ class OnCrawlClient:
                 offset=offset
             )
 
-            batch_links = result.get("links", [])
+            batch_links = result.get("urls", result.get("links", []))
             if total_hits is None:
                 total_hits = result.get("meta", {}).get("total_hits", 0)
 
@@ -195,11 +205,10 @@ class OnCrawlClient:
         oql: Optional[dict] = None,
         sort: Optional[list[dict]] = None,
         max_results: Optional[int] = None,
-        batch_size: int = 10000
+        batch_size: int = 1000
     ) -> dict:
         """
-        Auto-paginating page search that bypasses the 10k limit.
-        Fetches all matching pages by paginating through results.
+        Auto-paginating page search. Fetches in batches of up to 1000 (API limit).
 
         Args:
             crawl_id: The crawl ID
@@ -207,11 +216,12 @@ class OnCrawlClient:
             oql: Optional filter
             sort: Optional sort order
             max_results: Maximum results to return (None = all)
-            batch_size: Results per API call (max 10000)
+            batch_size: Results per API call (max 1000)
 
         Returns:
             dict with 'urls' array and 'meta' with total_hits
         """
+        batch_size = min(batch_size, self.SEARCH_MAX_LIMIT)
         all_pages = []
         offset = 0
         total_hits = None
@@ -222,7 +232,7 @@ class OnCrawlClient:
                 fields=fields,
                 oql=oql,
                 sort=sort,
-                limit=min(batch_size, 10000),
+                limit=batch_size,
                 offset=offset
             )
 
@@ -354,7 +364,7 @@ class OnCrawlClient:
                 offset=offset
             )
 
-            batch_links = result.get("links", [])
+            batch_links = result.get("urls", result.get("links", []))
             if total_hits is None:
                 total_hits = result.get("meta", {}).get("total_hits", 0)
                 logger.info(f"Export links: {total_hits:,} total links to fetch")
@@ -493,11 +503,7 @@ class OnCrawlClient:
 
     def _clamp_log_limit(self, limit: int) -> int:
         """Log monitoring search endpoints cap at 1000 results per request."""
-        if limit > self.LOG_SEARCH_MAX_LIMIT:
-            raise ValueError(
-                f"limit must be <= {self.LOG_SEARCH_MAX_LIMIT} for log monitoring search endpoints"
-            )
-        return limit
+        return self._clamp_search_limit(limit)
 
     def get_log_monitoring_metadata(self, project_id: str, data_type: str) -> dict:
         """Get log monitoring metadata (bot kinds, date ranges, search engines)."""

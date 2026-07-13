@@ -158,9 +158,9 @@ claude mcp add oncrawl
 
 ### Handling Large Result Sets
 
-The OnCrawl API limits search results to 10,000 per request. For larger datasets:
+The OnCrawl API limits search results to **1,000 per request** (pages, links, and logs). For larger datasets:
 
-- **`oncrawl_search_all_pages`** / **`oncrawl_search_all_links`**: Automatically paginate through all results
+- **`oncrawl_search_all_pages`** / **`oncrawl_search_all_links`** / **`oncrawl_search_all_log_pages`**: Automatically paginate in batches of 1000
 - Use `max_results` parameter to cap the total (e.g., `max_results: 50000`)
 - For very large exports (100k+), consider using filters to reduce the dataset
 
@@ -430,6 +430,11 @@ pip install -e .
 ```
 
 ## Version History
+
+### 0.5.2
+- Fix 9 broken composite tools (count, site_health, top_issues, find_url, inspect_url, compare_crawls, search_all_*)
+- Parse aggregation rows/cols format (page_count) instead of legacy buckets
+- Cap all search limits at 1000; fix field names in docs (origin/target, crawl1_/crawl2_, event_)
 
 ### 0.5.1
 - Fix log search pagination batch size (1000, not 10000)
