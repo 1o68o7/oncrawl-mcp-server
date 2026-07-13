@@ -536,7 +536,14 @@ Requires log_monitoring_ready and log_monitoring_data_ready on the project (chec
             name="oncrawl_get_log_monitoring_schema",
             description="""Get available fields for log monitoring. ALWAYS CALL THIS FIRST before searching or aggregating log data.
 Returns field names, types, filters, and aggregation capabilities.
-For pages data_type, granularity is required (days|weeks|months).""",
+For pages data_type, granularity is required (days|weeks|months).
+
+IMPORTANT — field naming differs by data_type:
+- pages: unprefixed names (url, crawl_hits_google, seo_visits_google)
+- events: all fields prefixed event_ (event_url, event_bot_kind, event_status_code)
+Using a pages field name on events (or vice versa) returns 400 Unknown field.
+
+For pages, day/week/month are filterable in OQL but cannot be included in fields (API returns 400).""",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -562,12 +569,13 @@ For pages data_type, granularity is required (days|weeks|months).""",
             name="oncrawl_search_log_events",
             description="""Search raw log events (one row per server log hit). Use for Googlebot visits, bot analysis, detailed log inspection.
 
-OQL Examples:
-- Googlebot hits: {"field": ["bot_kind", "equals", "seo"]}
-- Specific URL: {"field": ["url", "contains", "/blog/"]}
-- Date range: {"field": ["date", "between", "2024-01-01", "2024-01-31"]}
+All event fields are prefixed event_ (NOT the same names as pages). Examples:
+- Googlebot hits: {"field": ["event_bot_kind", "equals", "seo"]}
+- Specific URL: {"field": ["event_url", "contains", "/blog/"]}
+- Date range: {"field": ["event_date", "between", "2024-01-01", "2024-01-31"]}
 
-Use oncrawl_get_log_monitoring_schema first to discover available fields.""",
+Max 1000 results per request (log API limit, lower than crawl endpoints).
+Use oncrawl_get_log_monitoring_schema with data_type=events first.""",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -578,7 +586,7 @@ Use oncrawl_get_log_monitoring_schema first to discover available fields.""",
                     "fields": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Fields to return (e.g., ['url', 'bot_kind', 'date', 'status_code'])"
+                        "description": "Fields to return (e.g., ['event_url', 'event_bot_kind', 'event_date', 'event_status_code'])"
                     },
                     "oql": {
                         "type": "object",
@@ -586,7 +594,7 @@ Use oncrawl_get_log_monitoring_schema first to discover available fields.""",
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Max results (default 100, max 10000)",
+                        "description": "Max results (default 100, max 1000)",
                         "default": 100
                     },
                     "offset": {
@@ -608,11 +616,13 @@ Use oncrawl_get_log_monitoring_schema first to discover available fields.""",
             description="""Search log pages aggregated by time period. Use for crawl frequency per URL, SEO visits over time, bot activity trends.
 
 granularity is required: days, weeks, or months.
-OQL Examples:
-- High crawl frequency: {"field": ["hits", "gt", 100]}
-- Orphan URLs in logs: combine with crawl data
+Field names are unprefixed (url, crawl_hits_google) — different from events (event_url, event_bot_kind).
 
-Use oncrawl_get_log_monitoring_schema with matching granularity first.""",
+OQL Examples:
+- High crawl frequency: {"field": ["crawl_hits_google", "gt", 100]}
+- Filter by day (day is filterable but NOT returnable in fields): {"field": ["day", "equals", "2026-07-01"]}
+
+Max 1000 results per request. Use oncrawl_get_log_monitoring_schema with data_type=pages first.""",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -628,7 +638,7 @@ Use oncrawl_get_log_monitoring_schema with matching granularity first.""",
                     "fields": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Fields to return (e.g., ['url', 'hits', 'day', 'bot_kind'])"
+                        "description": "Fields to return (e.g., ['url', 'crawl_hits_google', 'seo_visits_google']) — do NOT include day/week/month"
                     },
                     "oql": {
                         "type": "object",
@@ -636,7 +646,7 @@ Use oncrawl_get_log_monitoring_schema with matching granularity first.""",
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Max results (default 100, max 10000)",
+                        "description": "Max results (default 100, max 1000)",
                         "default": 100
                     },
                     "offset": {
@@ -655,8 +665,8 @@ Use oncrawl_get_log_monitoring_schema with matching granularity first.""",
         ),
         Tool(
             name="oncrawl_search_all_log_pages",
-            description="""Auto-paginating log page search that bypasses the 10,000 result limit.
-Use when you need more than 10k log page rows. For smaller queries, use oncrawl_search_log_pages instead.""",
+            description="""Auto-paginating log page search. Fetches all matching rows in batches of 1000 (log API page size).
+Use when you need more than 1000 log page rows. For smaller queries, use oncrawl_search_log_pages instead.""",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -695,10 +705,11 @@ Use when you need more than 10k log page rows. For smaller queries, use oncrawl_
             name="oncrawl_aggregate_log_monitoring",
             description="""Aggregate log monitoring data to group and count at scale.
 
-Examples:
-- Count hits by bot kind: [{"fields": [{"name": "bot_kind"}]}]
-- Top crawled URLs: [{"fields": [{"name": "url"}], "value": "hits:sum"}]
-- With filter: [{"oql": {"field": ["bot_kind", "equals", "seo"]}, "fields": [{"name": "url"}]}]
+Use field names from the matching data_type schema (pages: url, crawl_hits_google; events: event_bot_kind, event_url).
+
+Examples (pages):
+- Top crawled URLs: [{"fields": [{"name": "url"}], "value": "crawl_hits_google:sum"}]
+- With filter: [{"oql": {"field": ["crawl_hits_google", "gt", 0]}, "fields": [{"name": "url"}]}]
 
 For pages data_type, granularity is required.""",
             inputSchema={
@@ -729,8 +740,9 @@ For pages data_type, granularity is required.""",
         ),
         Tool(
             name="oncrawl_export_log_pages",
-            description="""Export log pages without the 10k limit. Use for complete crawl frequency datasets.
-granularity is required (days|weeks|months). Filter with OQL to limit export size.""",
+            description="""Export log pages without the 1000-result search limit. Use for complete crawl frequency datasets.
+granularity is required (days|weeks|months). Filter with OQL to limit export size.
+file_type=json returns JSONL (one JSON object per line); file_type=csv returns semicolon-separated CSV.""",
             inputSchema={
                 "type": "object",
                 "properties": {

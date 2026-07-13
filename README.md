@@ -337,14 +337,22 @@ If flags are `false`, log tools return a clear error instead of failing silently
 3. `oncrawl_get_log_monitoring_schema` — discover fields (granularity required for pages)
 4. `oncrawl_search_log_events` or `oncrawl_search_log_pages` — query data
 
-### Common Log Fields
+### Common Log Fields (pages data type)
 
-- `url`, `urlpath` — page URL
-- `bot_kind` — `seo`, `sea`, `vertical`
-- `hits` — number of log hits (pages data type)
-- `day`, `week`, `month` — time period (depends on granularity)
-- `status_code` — HTTP status from log
-- `search_engine` — e.g. `google`
+- `url`, `urlpath` — page URL (unprefixed)
+- `crawl_hits_google`, `seo_visits_google` — hit/visit counts
+- `is_crawled_openai_gpt_bot`, `status_codes_perplexity_bot` — bot-specific metrics
+
+### Common Log Fields (events data type)
+
+All fields are prefixed `event_`: `event_url`, `event_bot_kind`, `event_date`, `event_status_code`
+
+### API quirks (log monitoring)
+
+- **Different field names** between `pages` and `events` — always check schema for the data_type you query
+- **Search limit is 1000** per request (not 10k like crawl endpoints)
+- **`day` / `week` / `month`** are filterable in OQL on pages but cannot be included in `fields`
+- **Export `file_type=json`** returns JSONL; pass via request body (handled by the MCP server)
 
 ### Examples
 
@@ -422,6 +430,11 @@ pip install -e .
 ```
 
 ## Version History
+
+### 0.5.1
+- Fix log search pagination batch size (1000, not 10000)
+- Fix export file_type (json JSONL via request body)
+- Document event_ field prefix and day/week/month filter-only behavior
 
 ### 0.5.0
 - Added Log Monitoring support (7 new tools)

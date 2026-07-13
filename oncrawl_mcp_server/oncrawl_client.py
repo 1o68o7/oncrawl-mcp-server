@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 
 class OnCrawlClient:
     BASE_URL = "https://app.oncrawl.com/api/v2/"
+    LOG_SEARCH_MAX_LIMIT = 1000
     
     def __init__(self, api_token: Optional[str] = None):
         self.api_token = api_token or os.environ.get("ONCRAWL_API_TOKEN")
@@ -490,6 +491,14 @@ class OnCrawlClient:
                 msg += " (log_monitoring_processing_enabled=false — traitement automatique inactif)"
             raise ValueError(msg)
 
+    def _clamp_log_limit(self, limit: int) -> int:
+        """Log monitoring search endpoints cap at 1000 results per request."""
+        if limit > self.LOG_SEARCH_MAX_LIMIT:
+            raise ValueError(
+                f"limit must be <= {self.LOG_SEARCH_MAX_LIMIT} for log monitoring search endpoints"
+            )
+        return limit
+
     def get_log_monitoring_metadata(self, project_id: str, data_type: str) -> dict:
         """Get log monitoring metadata (bot kinds, date ranges, search engines)."""
         self.ensure_log_monitoring_ready(project_id)
@@ -524,6 +533,7 @@ class OnCrawlClient:
     ) -> dict:
         """Search raw log events (one row per log hit)."""
         self.ensure_log_monitoring_ready(project_id)
+        limit = self._clamp_log_limit(limit)
         payload = {
             "fields": fields,
             "limit": limit,
@@ -550,6 +560,7 @@ class OnCrawlClient:
     ) -> dict:
         """Search log pages aggregated by granularity (days|weeks|months)."""
         self.ensure_log_monitoring_ready(project_id)
+        limit = self._clamp_log_limit(limit)
         payload = {
             "fields": fields,
             "limit": limit,
@@ -572,9 +583,10 @@ class OnCrawlClient:
         oql: Optional[dict] = None,
         sort: Optional[list[dict]] = None,
         max_results: Optional[int] = None,
-        batch_size: int = 10000
+        batch_size: int = 1000
     ) -> dict:
-        """Auto-paginating log page search that bypasses the 10k limit."""
+        """Auto-paginating log page search (1000 results per API call)."""
+        batch_size = min(batch_size, self.LOG_SEARCH_MAX_LIMIT)
         all_pages = []
         offset = 0
         total_hits = None
@@ -586,7 +598,7 @@ class OnCrawlClient:
                 fields=fields,
                 oql=oql,
                 sort=sort,
-                limit=min(batch_size, 10000),
+                limit=batch_size,
                 offset=offset
             )
 
@@ -639,14 +651,14 @@ class OnCrawlClient:
         oql: Optional[dict] = None,
         file_type: str = "json"
     ) -> str:
-        """Export log pages as CSV or JSON (no 10k limit)."""
+        """Export log pages as CSV or JSONL (no search limit)."""
         self.ensure_log_monitoring_ready(project_id)
         url = urljoin(
             self.BASE_URL,
             f"data/project/{project_id}/log_monitoring/pages/{granularity}"
         )
 
-        payload = {"fields": fields}
+        payload = {"fields": fields, "file_type": file_type}
         if oql:
             payload["oql"] = oql
 
@@ -655,7 +667,7 @@ class OnCrawlClient:
                 url,
                 headers=self.headers,
                 json=payload,
-                params={"export": "true", "file_type": file_type}
+                params={"export": "true"}
             )
 
             if response.status_code >= 400:
