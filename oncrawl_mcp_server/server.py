@@ -512,6 +512,257 @@ Examples:
             }
         ),
         Tool(
+            name="oncrawl_get_log_monitoring_metadata",
+            description="""Get log monitoring metadata for a project: bot kinds, available date ranges per granularity, search engines, week definition.
+Call this first to check what log data is available before querying.
+Requires log_monitoring_ready and log_monitoring_data_ready on the project (check via oncrawl_get_project).""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "The project ID"
+                    },
+                    "data_type": {
+                        "type": "string",
+                        "enum": ["events", "pages"],
+                        "description": "Log data type: events (raw hits) or pages (aggregated by URL)"
+                    }
+                },
+                "required": ["project_id", "data_type"]
+            }
+        ),
+        Tool(
+            name="oncrawl_get_log_monitoring_schema",
+            description="""Get available fields for log monitoring. ALWAYS CALL THIS FIRST before searching or aggregating log data.
+Returns field names, types, filters, and aggregation capabilities.
+For pages data_type, granularity is required (days|weeks|months).""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "The project ID"
+                    },
+                    "data_type": {
+                        "type": "string",
+                        "enum": ["events", "pages"],
+                        "description": "Log data type"
+                    },
+                    "granularity": {
+                        "type": "string",
+                        "enum": ["days", "weeks", "months"],
+                        "description": "Required for pages: aggregation period (days=YYYY-MM-DD, weeks=YYYY-Www, months=YYYY-MM)"
+                    }
+                },
+                "required": ["project_id", "data_type"]
+            }
+        ),
+        Tool(
+            name="oncrawl_search_log_events",
+            description="""Search raw log events (one row per server log hit). Use for Googlebot visits, bot analysis, detailed log inspection.
+
+OQL Examples:
+- Googlebot hits: {"field": ["bot_kind", "equals", "seo"]}
+- Specific URL: {"field": ["url", "contains", "/blog/"]}
+- Date range: {"field": ["date", "between", "2024-01-01", "2024-01-31"]}
+
+Use oncrawl_get_log_monitoring_schema first to discover available fields.""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "The project ID"
+                    },
+                    "fields": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Fields to return (e.g., ['url', 'bot_kind', 'date', 'status_code'])"
+                    },
+                    "oql": {
+                        "type": "object",
+                        "description": "OQL filter object"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results (default 100, max 10000)",
+                        "default": 100
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset",
+                        "default": 0
+                    },
+                    "sort": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "Sort order"
+                    }
+                },
+                "required": ["project_id", "fields"]
+            }
+        ),
+        Tool(
+            name="oncrawl_search_log_pages",
+            description="""Search log pages aggregated by time period. Use for crawl frequency per URL, SEO visits over time, bot activity trends.
+
+granularity is required: days, weeks, or months.
+OQL Examples:
+- High crawl frequency: {"field": ["hits", "gt", 100]}
+- Orphan URLs in logs: combine with crawl data
+
+Use oncrawl_get_log_monitoring_schema with matching granularity first.""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "The project ID"
+                    },
+                    "granularity": {
+                        "type": "string",
+                        "enum": ["days", "weeks", "months"],
+                        "description": "Time aggregation period"
+                    },
+                    "fields": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Fields to return (e.g., ['url', 'hits', 'day', 'bot_kind'])"
+                    },
+                    "oql": {
+                        "type": "object",
+                        "description": "OQL filter object"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results (default 100, max 10000)",
+                        "default": 100
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset",
+                        "default": 0
+                    },
+                    "sort": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "Sort order"
+                    }
+                },
+                "required": ["project_id", "granularity", "fields"]
+            }
+        ),
+        Tool(
+            name="oncrawl_search_all_log_pages",
+            description="""Auto-paginating log page search that bypasses the 10,000 result limit.
+Use when you need more than 10k log page rows. For smaller queries, use oncrawl_search_log_pages instead.""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "The project ID"
+                    },
+                    "granularity": {
+                        "type": "string",
+                        "enum": ["days", "weeks", "months"],
+                        "description": "Time aggregation period"
+                    },
+                    "fields": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Fields to return"
+                    },
+                    "oql": {
+                        "type": "object",
+                        "description": "OQL filter object"
+                    },
+                    "sort": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "Sort order"
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum results to return (default: all matching results)"
+                    }
+                },
+                "required": ["project_id", "granularity", "fields"]
+            }
+        ),
+        Tool(
+            name="oncrawl_aggregate_log_monitoring",
+            description="""Aggregate log monitoring data to group and count at scale.
+
+Examples:
+- Count hits by bot kind: [{"fields": [{"name": "bot_kind"}]}]
+- Top crawled URLs: [{"fields": [{"name": "url"}], "value": "hits:sum"}]
+- With filter: [{"oql": {"field": ["bot_kind", "equals", "seo"]}, "fields": [{"name": "url"}]}]
+
+For pages data_type, granularity is required.""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "The project ID"
+                    },
+                    "data_type": {
+                        "type": "string",
+                        "enum": ["events", "pages"],
+                        "description": "Log data type"
+                    },
+                    "granularity": {
+                        "type": "string",
+                        "enum": ["days", "weeks", "months"],
+                        "description": "Required for pages data_type"
+                    },
+                    "aggs": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "Array of aggregation objects"
+                    }
+                },
+                "required": ["project_id", "data_type", "aggs"]
+            }
+        ),
+        Tool(
+            name="oncrawl_export_log_pages",
+            description="""Export log pages without the 10k limit. Use for complete crawl frequency datasets.
+granularity is required (days|weeks|months). Filter with OQL to limit export size.""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "The project ID"
+                    },
+                    "granularity": {
+                        "type": "string",
+                        "enum": ["days", "weeks", "months"],
+                        "description": "Time aggregation period"
+                    },
+                    "fields": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Fields to export"
+                    },
+                    "oql": {
+                        "type": "object",
+                        "description": "OQL filter (recommended to limit export size)"
+                    },
+                    "file_type": {
+                        "type": "string",
+                        "enum": ["json", "csv"],
+                        "description": "Output format (default: json)",
+                        "default": "json"
+                    }
+                },
+                "required": ["project_id", "granularity", "fields"]
+            }
+        ),
+        Tool(
             name="oncrawl_site_health",
             description="""Quick site health summary. Returns key metrics at a glance:
 - Total pages crawled
@@ -704,7 +955,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 "start_url": p.get("start_url"),
                 "last_crawl_id": p.get("last_crawl_id"),
                 "crawl_ids": p.get("crawl_ids", [])[-10:],  # Last 10 crawls
-                "coc_ids": p.get("crawl_over_crawl_ids", [])
+                "coc_ids": p.get("crawl_over_crawl_ids", []),
+                "log_monitoring_ready": p.get("log_monitoring_ready", False),
+                "log_monitoring_data_ready": p.get("log_monitoring_data_ready", False),
+                "log_monitoring_processing_enabled": p.get("log_monitoring_processing_enabled", False),
             }
         
         elif name == "oncrawl_get_schema":
@@ -835,6 +1089,79 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 coc_id=arguments["coc_id"],
                 aggs=arguments["aggs"]
             )
+
+        elif name == "oncrawl_get_log_monitoring_metadata":
+            result = client.get_log_monitoring_metadata(
+                project_id=arguments["project_id"],
+                data_type=arguments["data_type"]
+            )
+
+        elif name == "oncrawl_get_log_monitoring_schema":
+            result = client.get_log_monitoring_fields(
+                project_id=arguments["project_id"],
+                data_type=arguments["data_type"],
+                granularity=arguments.get("granularity")
+            )
+            if "fields" in result:
+                result["fields"] = [
+                    {
+                        "name": f["name"],
+                        "type": f["type"],
+                        "filters": f.get("actions", []),
+                        "can_aggregate": f.get("agg_dimension", False),
+                        "agg_methods": f.get("agg_metric_methods", [])
+                    }
+                    for f in result["fields"]
+                ]
+
+        elif name == "oncrawl_search_log_events":
+            result = client.search_log_events(
+                project_id=arguments["project_id"],
+                fields=arguments["fields"],
+                oql=arguments.get("oql"),
+                limit=arguments.get("limit", 100),
+                offset=arguments.get("offset", 0),
+                sort=arguments.get("sort")
+            )
+
+        elif name == "oncrawl_search_log_pages":
+            result = client.search_log_pages(
+                project_id=arguments["project_id"],
+                granularity=arguments["granularity"],
+                fields=arguments["fields"],
+                oql=arguments.get("oql"),
+                limit=arguments.get("limit", 100),
+                offset=arguments.get("offset", 0),
+                sort=arguments.get("sort")
+            )
+
+        elif name == "oncrawl_search_all_log_pages":
+            result = client.search_all_log_pages(
+                project_id=arguments["project_id"],
+                granularity=arguments["granularity"],
+                fields=arguments["fields"],
+                oql=arguments.get("oql"),
+                sort=arguments.get("sort"),
+                max_results=arguments.get("max_results")
+            )
+
+        elif name == "oncrawl_aggregate_log_monitoring":
+            result = client.aggregate_log_monitoring(
+                project_id=arguments["project_id"],
+                data_type=arguments["data_type"],
+                aggs=arguments["aggs"],
+                granularity=arguments.get("granularity")
+            )
+
+        elif name == "oncrawl_export_log_pages":
+            raw = client.export_log_pages(
+                project_id=arguments["project_id"],
+                granularity=arguments["granularity"],
+                fields=arguments["fields"],
+                oql=arguments.get("oql"),
+                file_type=arguments.get("file_type", "json")
+            )
+            return [TextContent(type="text", text=raw)]
 
         elif name == "oncrawl_site_health":
             crawl_id = arguments["crawl_id"]

@@ -7,14 +7,14 @@ MCP server that exposes OnCrawl's API for use with Claude Code and Claude Deskto
 
 ## Features
 
-- **12 MCP Tools** for comprehensive SEO analysis
+- **28 MCP Tools** for comprehensive SEO and log analysis
 - **Raw data access**: Query pages, links, clusters, structured data with flexible OQL
 - **Schema discovery**: Claude learns available fields before querying
 - **Aggregations**: Group/count by any dimension for pattern detection
 - **Full exports**: No 10k limit for complete datasets
 - **Crawl-over-crawl analysis**: Track changes between crawls (new pages, status changes, etc.)
 - **Google Search Console integration**: 600+ GSC fields including clicks, impressions, CTR, position by device, brand/non-brand, and more
-- **Google Analytics 4 integration**: Session, user, and engagement metrics
+- **Log Monitoring**: Googlebot visits, SEO organic traffic, crawl frequency per page
 
 ## What Makes This Powerful
 
@@ -148,6 +148,13 @@ claude mcp add oncrawl
 | `oncrawl_get_coc_schema` | Discover fields for crawl-over-crawl comparison |
 | `oncrawl_search_coc` | Find what changed between two crawls |
 | `oncrawl_aggregate_coc` | Aggregate change patterns at scale |
+| `oncrawl_get_log_monitoring_metadata` | Get log monitoring metadata (bot kinds, date ranges) |
+| `oncrawl_get_log_monitoring_schema` | **Call first** - discover log monitoring fields |
+| `oncrawl_search_log_events` | Search raw log hits (Googlebot, bots) |
+| `oncrawl_search_log_pages` | Search log pages by time period (days/weeks/months) |
+| `oncrawl_search_all_log_pages` | **Auto-paginating** log page search - bypasses 10k limit |
+| `oncrawl_aggregate_log_monitoring` | Aggregate log data by bot, URL, time period |
+| `oncrawl_export_log_pages` | Full log page export without 10k limit |
 
 ### Handling Large Result Sets
 
@@ -310,6 +317,44 @@ OnCrawl uses OQL (OnCrawl Query Language) for filtering. Here are the key operat
 
 **Pro tip**: Always call `oncrawl_get_schema` first to see exactly which fields are available for your specific crawl.
 
+## Log Monitoring
+
+Log Monitoring exposes server log data (Googlebot crawls, SEO visits) at the **project** level (not crawl level).
+
+### Prerequisites
+
+Check project flags via `oncrawl_get_project`:
+- `log_monitoring_ready` — log parsing configuration submitted
+- `log_monitoring_data_ready` — index is searchable
+- `log_monitoring_processing_enabled` — automatic log file processing active
+
+If flags are `false`, log tools return a clear error instead of failing silently.
+
+### Workflow
+
+1. `oncrawl_get_project` — verify log monitoring flags
+2. `oncrawl_get_log_monitoring_metadata` — check available date ranges and bot kinds
+3. `oncrawl_get_log_monitoring_schema` — discover fields (granularity required for pages)
+4. `oncrawl_search_log_events` or `oncrawl_search_log_pages` — query data
+
+### Common Log Fields
+
+- `url`, `urlpath` — page URL
+- `bot_kind` — `seo`, `sea`, `vertical`
+- `hits` — number of log hits (pages data type)
+- `day`, `week`, `month` — time period (depends on granularity)
+- `status_code` — HTTP status from log
+- `search_engine` — e.g. `google`
+
+### Examples
+
+```
+"Check if log monitoring is active for project abc123"
+"Get log monitoring metadata for project abc123, data type pages"
+"Show top 20 most crawled URLs by Googlebot last month"
+"Export all log pages with more than 50 hits per day"
+```
+
 ## GSC Integration
 
 OnCrawl automatically integrates with Google Search Console when connected to your account. The GSC fields will appear in the schema if integration is active.
@@ -378,12 +423,12 @@ pip install -e .
 
 ## Version History
 
-### 0.2.0 (Latest)
-- Added 3 crawl-over-crawl (COC) tools
-- Total of 12 MCP tools
-- Full GSC integration documentation
+### 0.5.0
+- Added Log Monitoring support (7 new tools)
+- Project flags for log monitoring exposed in `oncrawl_get_project`
 
-### 0.1.0
+### 0.4.6
+- Extended tool set (site health, GSC integration, auto-pagination, exports)
 - Initial release with 9 core tools
 - Basic OnCrawl API integration
 

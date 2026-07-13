@@ -464,3 +464,201 @@ class OnCrawlClient:
             f"data/crawl_over_crawl/{coc_id}/{data_type}/aggs",
             json_data={"aggs": aggs}
         )
+
+    # === Log Monitoring ===
+
+    def _get_log_monitoring_flags(self, project_id: str) -> dict:
+        raw = self.get_project(project_id)
+        p = raw.get("project", raw)
+        return {
+            "log_monitoring_ready": p.get("log_monitoring_ready", False),
+            "log_monitoring_data_ready": p.get("log_monitoring_data_ready", False),
+            "log_monitoring_processing_enabled": p.get("log_monitoring_processing_enabled", False),
+        }
+
+    def ensure_log_monitoring_ready(self, project_id: str) -> None:
+        """Raise a clear error if log monitoring is not available for this project."""
+        flags = self._get_log_monitoring_flags(project_id)
+        issues = []
+        if not flags["log_monitoring_ready"]:
+            issues.append("log_monitoring_ready=false (configuration non soumise)")
+        if not flags["log_monitoring_data_ready"]:
+            issues.append("log_monitoring_data_ready=false (index non interrogeable)")
+        if issues:
+            msg = "Log Monitoring non disponible pour ce projet: " + "; ".join(issues)
+            if not flags["log_monitoring_processing_enabled"]:
+                msg += " (log_monitoring_processing_enabled=false — traitement automatique inactif)"
+            raise ValueError(msg)
+
+    def get_log_monitoring_metadata(self, project_id: str, data_type: str) -> dict:
+        """Get log monitoring metadata (bot kinds, date ranges, search engines)."""
+        self.ensure_log_monitoring_ready(project_id)
+        return self._get(f"data/project/{project_id}/log_monitoring/{data_type}/metadata")
+
+    def get_log_monitoring_fields(
+        self,
+        project_id: str,
+        data_type: str,
+        granularity: Optional[str] = None
+    ) -> dict:
+        """Get available fields for log monitoring events or pages."""
+        self.ensure_log_monitoring_ready(project_id)
+        if data_type == "pages":
+            if not granularity:
+                raise ValueError("granularity requis pour data_type=pages (days|weeks|months)")
+            endpoint = f"data/project/{project_id}/log_monitoring/pages/{granularity}/fields"
+        elif data_type == "events":
+            endpoint = f"data/project/{project_id}/log_monitoring/events/fields"
+        else:
+            raise ValueError(f"data_type invalide: {data_type} (events|pages)")
+        return self._get(endpoint)
+
+    def search_log_events(
+        self,
+        project_id: str,
+        fields: list[str],
+        oql: Optional[dict] = None,
+        limit: int = 100,
+        offset: int = 0,
+        sort: Optional[list[dict]] = None
+    ) -> dict:
+        """Search raw log events (one row per log hit)."""
+        self.ensure_log_monitoring_ready(project_id)
+        payload = {
+            "fields": fields,
+            "limit": limit,
+            "offset": offset
+        }
+        if oql:
+            payload["oql"] = oql
+        if sort:
+            payload["sort"] = sort
+        return self._post(
+            f"data/project/{project_id}/log_monitoring/events",
+            json_data=payload
+        )
+
+    def search_log_pages(
+        self,
+        project_id: str,
+        granularity: str,
+        fields: list[str],
+        oql: Optional[dict] = None,
+        limit: int = 100,
+        offset: int = 0,
+        sort: Optional[list[dict]] = None
+    ) -> dict:
+        """Search log pages aggregated by granularity (days|weeks|months)."""
+        self.ensure_log_monitoring_ready(project_id)
+        payload = {
+            "fields": fields,
+            "limit": limit,
+            "offset": offset
+        }
+        if oql:
+            payload["oql"] = oql
+        if sort:
+            payload["sort"] = sort
+        return self._post(
+            f"data/project/{project_id}/log_monitoring/pages/{granularity}",
+            json_data=payload
+        )
+
+    def search_all_log_pages(
+        self,
+        project_id: str,
+        granularity: str,
+        fields: list[str],
+        oql: Optional[dict] = None,
+        sort: Optional[list[dict]] = None,
+        max_results: Optional[int] = None,
+        batch_size: int = 10000
+    ) -> dict:
+        """Auto-paginating log page search that bypasses the 10k limit."""
+        all_pages = []
+        offset = 0
+        total_hits = None
+
+        while True:
+            result = self.search_log_pages(
+                project_id=project_id,
+                granularity=granularity,
+                fields=fields,
+                oql=oql,
+                sort=sort,
+                limit=min(batch_size, 10000),
+                offset=offset
+            )
+
+            batch_pages = result.get("urls", [])
+            if total_hits is None:
+                total_hits = result.get("meta", {}).get("total_hits", 0)
+
+            all_pages.extend(batch_pages)
+
+            if len(batch_pages) < batch_size:
+                break
+            if max_results and len(all_pages) >= max_results:
+                all_pages = all_pages[:max_results]
+                break
+
+            offset += batch_size
+
+        return {
+            "urls": all_pages,
+            "meta": {
+                "total_hits": total_hits,
+                "returned": len(all_pages)
+            }
+        }
+
+    def aggregate_log_monitoring(
+        self,
+        project_id: str,
+        data_type: str,
+        aggs: list[dict],
+        granularity: Optional[str] = None
+    ) -> dict:
+        """Run aggregate queries on log monitoring data."""
+        self.ensure_log_monitoring_ready(project_id)
+        if data_type == "pages":
+            if not granularity:
+                raise ValueError("granularity requis pour data_type=pages (days|weeks|months)")
+            endpoint = f"data/project/{project_id}/log_monitoring/pages/{granularity}/aggs"
+        elif data_type == "events":
+            endpoint = f"data/project/{project_id}/log_monitoring/events/aggs"
+        else:
+            raise ValueError(f"data_type invalide: {data_type} (events|pages)")
+        return self._post(endpoint, json_data={"aggs": aggs})
+
+    def export_log_pages(
+        self,
+        project_id: str,
+        granularity: str,
+        fields: list[str],
+        oql: Optional[dict] = None,
+        file_type: str = "json"
+    ) -> str:
+        """Export log pages as CSV or JSON (no 10k limit)."""
+        self.ensure_log_monitoring_ready(project_id)
+        url = urljoin(
+            self.BASE_URL,
+            f"data/project/{project_id}/log_monitoring/pages/{granularity}"
+        )
+
+        payload = {"fields": fields}
+        if oql:
+            payload["oql"] = oql
+
+        with httpx.Client(timeout=300.0) as client:
+            response = client.post(
+                url,
+                headers=self.headers,
+                json=payload,
+                params={"export": "true", "file_type": file_type}
+            )
+
+            if response.status_code >= 400:
+                raise Exception(f"Export error {response.status_code}: {response.text}")
+
+            return response.text
